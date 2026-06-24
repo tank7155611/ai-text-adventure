@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { EVENT_TYPES } from './types';
 
 const statImpactSchema = z.enum([
   'none',
@@ -25,16 +26,12 @@ const choiceSchema = z.object({
   text: z.string().min(2).max(80)
 });
 
-export const roundOutputSchema = z
+export const controlOutputSchema = z
   .object({
-    schema_version: z.literal('round_event_v1'),
-    story: z.object({
-      title: z.string().min(2).max(40),
-      body: z.string().min(40).max(2400)
-    }),
+    schema_version: z.literal('round_control_v1'),
     resolution: z.object({
       summary: z.string().min(2).max(300),
-      event_type: z.enum(['normal', 'combat', 'discovery', 'danger', 'rest', 'twist'])
+      event_type: z.enum(EVENT_TYPES)
     }),
     stat_effects: statEffectsSchema,
     hidden_state_updates: z
@@ -69,5 +66,5 @@ export const finaleOutputSchema = z
   })
   .strict();
 
-export type RoundOutputSchema = z.infer<typeof roundOutputSchema>;
+export type ControlOutputSchema = z.infer<typeof controlOutputSchema>;
 export type FinaleOutputSchema = z.infer<typeof finaleOutputSchema>;

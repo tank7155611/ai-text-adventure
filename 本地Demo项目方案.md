@@ -137,11 +137,13 @@ ai-text-adventure-demo/
       game.ts
       model.ts
     schemas/
-      roundOutputSchema.ts
+      controlOutputSchema.ts
       endingOutputSchema.ts
     prompts/
-      buildOpeningPrompt.ts
-      buildRoundPrompt.ts
+      buildOpeningStoryPrompt.ts
+      buildOpeningControlPrompt.ts
+      buildRoundStoryPrompt.ts
+      buildRoundControlPrompt.ts
       buildFailureFinalePrompt.ts
       buildCompletionFinalePrompt.ts
       buildJsonRepairPrompt.ts
@@ -183,14 +185,20 @@ ai-text-adventure-demo/
 React UI
   ↓ 用户点击选项
 Game Controller
-  ↓ 组装 Prompt
+  ↓ 组装剧情 Prompt
 LLM Client
   ↓ stream: true
 OpenAI 兼容接口
-  ↓ SSE 文本流
-Stream Parser
-  ↓ 拼接完整 JSON 字符串
-Zod Schema 校验
+  ↓ SSE 剧情文本流
+Story Parser
+  ↓ 得到 story.title + story.body
+Game Controller
+  ↓ 组装控制 JSON Prompt
+LLM Client
+  ↓ stream: true
+OpenAI 兼容接口
+  ↓ 短 JSON 文本流
+Zod Schema 校验控制 JSON
   ↓
 失败：JSON 修复一次
   ↓
@@ -205,7 +213,7 @@ React UI 展示
 | --- | --- |
 | UI 组件 | 展示世界、剧情、属性、选项、结算、结局 |
 | useGameController | 控制游戏流程 |
-| prompts | 构建开场、每轮、终局、JSON 修复 Prompt |
+| prompts | 构建剧情文本、控制 JSON、终局、JSON 修复 Prompt |
 | llmClient | 调用 OpenAI 兼容接口 |
 | streamParser | 解析 SSE 流 |
 | schemas | 校验模型输出 |
@@ -290,9 +298,21 @@ type GameState = {
 
 ## 7. 大模型输出设计
 
-大模型不直接返回最终 `player_stats`，也不直接返回具体加减数字。模型只返回本轮属性影响标签，前端规则层再把标签换算为真实 `stat_changes`。
+大模型不直接返回最终 `player_stats`，也不直接返回具体加减数字。每轮采用两段式生成：
 
-每轮输出：
+1. 第一段生成纯剧情文本，用于流式展示给玩家。
+2. 第二段根据已经生成的剧情文本返回短控制 JSON。
+
+第一段剧情文本输出：
+
+```text
+标题：2-40字标题
+
+正文：
+300-700字中文剧情正文，2-5段
+```
+
+第二段控制 JSON 输出：
 
 ```ts
 type StatImpact =
@@ -312,28 +332,32 @@ type StatEffects = {
   reason: string;
 };
 
-type ModelRoundOutput = {
-  schema_version: 'round_event_v1';
-  story: Story;
+type ModelControlOutput = {
+  schema_version: 'round_control_v1';
   resolution: Resolution;
   stat_effects: StatEffects;
   hidden_state_updates: HiddenStateUpdates;
   story_arc_updates?: StoryArcUpdates;
   choices: Choice[];
 };
+
+type ModelRoundOutput = Omit<ModelControlOutput, 'schema_version'> & {
+  schema_version: 'round_event_v1';
+  story: Story;
+};
 ```
 
 关键规则：
 
-1. 模型不返回完整 `player_stats`。
-2. 模型不返回完整 `hidden_state`。
-3. 模型不返回最终 `status`。
-4. 前端规则层负责把 `stat_effects` 换算成真实属性变化，并计算最终属性。
-5. 前端规则层负责合并隐藏状态。
-6. 前端规则层负责判断 `playing / failed / completed`。
-7. `stat_effects.reason` 用于轻量结算区展示原因短句，不能包含具体数值。
-8. 每轮剧情正文建议控制在 300-700 个中文字符，避免模型只写完正文就被截断，导致后续选项和 JSON 字段缺失。
-9. 接口调用应设置足够的输出上限，例如 `max_tokens: 4096`。
+1. 剧情文本不放进 JSON，避免长文本导致 JSON 截断或格式失败。
+2. 控制 JSON 不新增剧情事实，只整理已生成剧情中的结果、影响、状态更新和下一轮选项。
+3. 模型不返回完整 `player_stats`。
+4. 模型不返回完整 `hidden_state`。
+5. 模型不返回最终 `status`。
+6. 前端规则层负责把 `stat_effects` 换算成真实属性变化，并计算最终属性。
+7. 前端规则层负责合并隐藏状态。
+8. 前端规则层负责判断 `playing / failed / completed`。
+9. `stat_effects.reason` 用于轻量结算区展示原因短句，不能包含具体数值。
 
 ---
 
@@ -476,7 +500,9 @@ function resolveStatus(round: number, stats: PlayerStats): GameStatus {
 ```text
 玩家点击选项
 ↓
-AI 返回本轮剧情、结算描述、stat_effects
+AI 流式返回本轮剧情纯文本
+↓
+AI 根据已生成剧情返回控制 JSON
 ↓
 前端规则层把 stat_effects 映射为 stat_changes，并计算 next_player_stats
 ↓
@@ -516,10 +542,10 @@ type FailureFinaleOutput = {
 
 ## 9. JSON 校验与修复
 
-模型返回内容必须先经过：
+第二段控制 JSON 和终局 JSON 必须经过：
 
 ```text
-SSE 拼接
+模型返回文本
 ↓
 JSON.parse
 ↓
@@ -534,157 +560,234 @@ Zod schema 校验
 
 JSON 修复 Prompt 只做结构修复，不改写剧情含义。
 
-修复失败时：
+控制 JSON 生成要求：
+
+* 不使用流式输出，避免 SSE 片段和文本拼接增加格式失败概率。
+* 使用确定性参数，例如 `temperature: 0`。
+* 输出上限控制在短 JSON 范围，例如 `max_tokens: 1200`。
+* 优先请求 `response_format: { "type": "json_object" }`；如果 OpenAI 兼容接口不支持该参数，则自动移除该参数重试一次。
+
+JSON 修复要求：
+
+* 不使用流式输出。
+* 使用更低温参数，例如 `temperature: 0`。
+* 修复 Prompt 必须携带第一次 JSON parse / Zod schema 校验失败的具体错误。
+
+控制 JSON 修复失败时：
 
 * 不推进轮次。
 * 不扣属性。
 * 不更新 `hidden_state`。
 * 不更新 `story_arc`。
-* 在选项区域显示错误态和“重新生成本轮”按钮。
-* 点击“重新生成本轮”时，使用本轮开始前的 `game_state` 和同一个玩家选择重新调用本轮 Prompt。
-* 不建议只重新修复同一份坏 JSON，因为自动修复已经失败，继续修同一段内容成功率低，且容易和已展示剧情不一致。
+* 保留已经流式展示出来的剧情正文。
+* 在选项区域显示错误态和“重新生成选项”按钮。
+* 点击“重新生成选项”时，使用本轮开始前的 `game_state`、同一个玩家选择和已生成的 `story` 重新调用控制 JSON Prompt。
+* 不重新生成剧情正文，避免玩家已经看到的剧情被改写。
 
 ### 9.1 Prompt 与 Schema 实际实现
 
-本节内容必须和当前 Demo 源码保持一致。开发时可以直接按本节拆分为：
+本节内容必须和当前 Demo 源码保持一致。当前实现文件：
 
 ```text
 src/game/prompts.ts
 src/game/schemas.ts
+src/game/ai.ts
 ```
 
-如果后续调整 Prompt 或 schema，需要同步更新本节，避免文档和实际 Demo 脱节。
+#### 9.1.1 第一段：剧情文本 Prompt
 
-#### 9.1.1 Prompt 公共结构
+开场使用 `buildOpeningStoryPrompt(world)`，每轮使用 `buildRoundStoryPrompt(game, choiceText)`。
 
-```ts
-import type { GameState, PlayerStats, WorldDefinition } from './types';
+通用输出规则：
 
-const jsonOnlyRule = `只返回一个合法 JSON 对象，不要 Markdown，不要解释，不要代码块。`;
+```text
+只返回纯文本，不要 JSON，不要 Markdown，不要代码块。
+输出格式必须是：
+标题：2-40字标题
 
-const roundSchemaDescription = `{
-  "schema_version": "round_event_v1",
-  "story": { "title": "2-40字标题", "body": "本轮剧情正文，中文，300-700字，2-5段" },
-  "resolution": { "summary": "本轮结果摘要", "event_type": "normal|combat|discovery|danger|rest|twist" },
+正文：
+300-700字中文剧情正文，2-5段。
+```
+
+开场剧情 Prompt 必须包含：
+
+```text
+世界名称、基调、世界概览、世界背景、世界局势、核心悬念、玩家身份、主目标、当前剧情线。
+只写已经发生的开场局面，不生成行动选项。
+不要出现属性变化、结算、系统提示、JSON 字段。
+不要替玩家做出后续选择。
+正文必须给玩家留下明确但开放的行动空间。
+```
+
+每轮剧情 Prompt 必须包含：
+
+```text
+世界信息、当前 game_state、hidden_state、story_arc、最近3轮、历史摘要。
+上一轮标题、上一轮正文、玩家选择。
+只写本轮实际发生的剧情，不生成下一轮行动选项。
+不要写属性变化、结算摘要、JSON 字段或系统状态。
+不要直接宣布 failed、completed、game_over 或游戏结束。
+剧情必须承接玩家选择和 story_arc，不要跳到无关主线。
+本轮事件不要总是精神污染或异常凝视；可以包含探索、交涉、战斗、陷阱、休整、治疗、训练、装备加固、获得资源、同伴帮助等不同类型。
+如果玩家选择偏谨慎或准备，可以让剧情出现恢复、加固、绕行、资源利用或信息整理，而不是必然受损。
+正文最后要停在一个适合生成三选项的局面。
+```
+
+#### 9.1.2 第二段：控制 JSON Prompt
+
+开场使用 `buildOpeningControlPrompt(world, story)`，每轮使用 `buildRoundControlPrompt(game, choiceText, story)`。
+
+控制 JSON 只允许整理已经生成的剧情，不能新增剧情事实。
+
+控制 JSON 字段契约：
+
+```text
+- schema_version: 必须精确等于 "round_control_v1"
+- resolution.summary: 2-300 字中文短句
+- resolution.event_type: 只能是 "normal", "exploration", "investigation", "social", "negotiation", "combat", "ambush", "escape", "stealth", "hazard", "trap", "puzzle", "discovery", "twist", "rest", "recovery", "training", "upgrade", "resource", "ally", "sacrifice", "ritual" 其中一个
+- stat_effects.hp/san/atk/def: 每个字段只能是 "none", "minor_loss", "medium_loss", "major_loss", "minor_gain", "medium_gain", "major_gain" 其中一个
+- stat_effects.reason: 2-160 字中文短句，不能包含具体数字
+- hidden_state_updates: 必须是对象；没有更新时使用空数组和 progress: 0
+- hidden_state_updates.progress: 整数，范围 -10 到 20
+- hidden_state_updates.key_clues/allies/injuries/flags: 字符串数组，最多 5 项
+- hidden_state_updates.major_choices: 字符串数组，最多 5 项
+- story_arc_updates: 对象；必须包含 current_thread、unresolved_hooks、tension_level、finale_direction
+- story_arc_updates.tension_level: 整数，范围 1 到 5
+- choices: 必须正好 3 项，id 必须依次为 "A", "B", "C"，text 为 2-80 字中文行动
+```
+
+控制 JSON 合法示例：
+
+```json
+{
+  "schema_version": "round_control_v1",
+  "resolution": {
+    "summary": "主角利用现有材料完成临时加固，为继续深入争取了余地。",
+    "event_type": "upgrade"
+  },
   "stat_effects": {
-    "hp": "none|minor_loss|medium_loss|major_loss|minor_gain|medium_gain|major_gain",
-    "san": "none|minor_loss|medium_loss|major_loss|minor_gain|medium_gain|major_gain",
-    "atk": "none|minor_loss|medium_loss|major_loss|minor_gain|medium_gain|major_gain",
-    "def": "none|minor_loss|medium_loss|major_loss|minor_gain|medium_gain|major_gain",
-    "reason": "用于结算区展示的原因短句，不能包含具体数字"
+    "hp": "none",
+    "san": "none",
+    "atk": "none",
+    "def": "minor_gain",
+    "reason": "临时加固让主角面对下一次危险时更有把握"
   },
   "hidden_state_updates": {
-    "progress": 0,
+    "progress": 1,
     "key_clues": [],
     "allies": [],
     "injuries": [],
-    "flags": [],
+    "flags": ["完成一次临时准备"],
     "major_choices": []
   },
   "story_arc_updates": {
-    "main_goal": "可选",
-    "current_thread": "可选",
-    "unresolved_hooks": [],
-    "tension_level": 1,
-    "finale_direction": "可选"
+    "current_thread": "带着临时加固继续推进主线",
+    "unresolved_hooks": ["前方真正的阻碍尚未显露"],
+    "tension_level": 2,
+    "finale_direction": "主角逐步积累足以接近核心真相的优势"
   },
   "choices": [
-    { "id": "A", "text": "行动选项" },
-    { "id": "B", "text": "行动选项" },
-    { "id": "C", "text": "行动选项" }
+    { "id": "A", "text": "趁准备完成立刻推进" },
+    { "id": "B", "text": "先验证加固是否可靠" },
+    { "id": "C", "text": "寻找更多可用资源再行动" }
   ]
-}`;
-
-function statsText(stats: PlayerStats) {
-  return `生命 ${stats.hp}/100，理智 ${stats.san}/100，攻击 ${stats.atk}，防御 ${stats.def}`;
-}
-
-function stateContext(game: GameState) {
-  return `当前轮次：第 ${game.round} / 100 轮
-当前属性：${statsText(game.player_stats)}
-hidden_state：${JSON.stringify(game.hidden_state)}
-story_arc：${JSON.stringify(game.story_arc)}
-最近3轮：${JSON.stringify(game.recent_history)}
-历史摘要：${game.game_history_summary || '暂无'}`;
 }
 ```
 
-#### 9.1.2 开场 Prompt
+事件类型参考：
 
-```ts
-export function buildOpeningPrompt(world: WorldDefinition) {
-  return [
-    {
-      role: 'system' as const,
-      content: `你是开放世界文字冒险游戏的叙事引擎。你负责生成剧情、选项和本轮属性影响标签，但不能决定最终状态或具体数值。${jsonOnlyRule}`
-    },
-    {
-      role: 'user' as const,
-      content: `为本地 Demo 生成第 1 轮开场剧情和三个行动选项。
+```text
+normal: 普通推进，无明显风险或收益
+exploration: 探索新区域、进入未知地点
+investigation: 调查线索、验证推断
+social: 对话、关系变化、获取态度
+negotiation: 交易、谈判、说服、交换条件
+combat: 正面战斗
+ambush: 伏击、突袭、突然受袭
+escape: 逃脱、追逐、摆脱危险
+stealth: 潜行、绕行、避开正面冲突
+hazard: 环境危险、坍塌、毒雾、压力、风暴等
+trap: 陷阱、机关、封锁、误触装置
+puzzle: 解谜、破解、机关推演
+discovery: 发现重要线索或新事实
+twist: 反转、真相偏移、可信信息被推翻
+rest: 短暂休整、喘息、整理状态
+recovery: 治疗、恢复、稳定理智
+training: 训练、领悟、熟练度提升
+upgrade: 武器、防具、工具、护符或装备升级
+resource: 获得或消耗补给、材料、能量
+ally: 获得同伴、支援、临时帮助
+sacrifice: 付出代价换取推进
+ritual: 仪式、魔法、世界机制或特殊规则触发
+```
 
-世界：${world.name}
-基调：${world.tone}
-世界概览：${world.overview}
-世界背景：${world.premise}
-世界局势：${world.worldDetail}
-核心悬念：${world.conflict}
-玩家身份：${world.playerIdentity}
-主目标：${world.mainGoal}
-当前剧情线：${world.initialThread}
+属性节奏规则：
 
-规则：
-1. 这是第 1 轮，不要造成属性变化，stat_effects 的 hp/san/atk/def 全部为 "none"。
-2. 只允许属性字段 hp、san、atk、def。
-3. 不要返回 status、game_over、等级、金币、背包、声望、地点/时间/气氛状态。
+```text
+大多数轮次只影响 0-1 个属性，重大事件最多影响 2 个属性。
+不要连续多轮只使用 san loss；除非剧情明确持续精神污染，否则应在 hp、san、atk、def、无变化之间形成变化。
+combat、ambush、trap、hazard、escape 更容易影响生命或防御。
+investigation、discovery、twist、ritual 才更容易影响理智，但不代表每次都要降低理智。
+rest、recovery 可以恢复生命或理智。
+training 可以提升攻击。
+upgrade 可以提升攻击或防御。
+resource、ally、social、negotiation 可以无属性变化，也可以带来生命恢复、理智恢复、防御提升或后续优势。
+sacrifice 可以用生命或理智损失换取主线推进。
+```
+
+选项方向规则：
+
+```text
+三个选项都必须承接当前剧情最后局面。
+A 通常偏主动推进、冒险、正面处理。
+B 通常偏谨慎调查、防御、观察、验证。
+C 通常偏恢复、准备、绕行、交涉、利用资源或寻找支援。
+不要让三个选项都只是调查异常、靠近异常或凝视异常。
+```
+
+控制 JSON 硬性规则：
+
+```text
+1. 只允许属性字段 hp、san、atk、def。
+2. 不能返回 status、failed、completed、game_over。
+3. stat_effects 只能使用枚举标签，不能返回具体加减数字。
 4. choices 必须正好 3 个，id 为 A/B/C。
-5. story.body 控制在 300-700 个中文字符，最多 5 段，必须给后续 JSON 字段留下输出空间。
-6. 输出必须符合这个 JSON 结构：
-${roundSchemaDescription}`
-    }
-  ];
-}
+5. choices 必须承接本轮正文最后的局面。
+6. hidden_state_updates 和 story_arc_updates 只能提取或延续正文已经发生的信息。
+7. stat_effects.reason 必须和正文发生的事件一致，不要包含具体数值。
+8. 不能使用带竖线的占位字符串，例如 "normal|combat|..."。
+9. 必须参考示例格式，但不能照抄示例内容。
+10. 根据正文选择最贴近的 event_type，不要总是使用 discovery、twist 或 ritual。
 ```
 
-#### 9.1.3 每轮 Prompt
+#### 9.1.3 两段式编排流程
+
+实际调用顺序必须是：
 
 ```ts
-export function buildRoundPrompt(game: GameState, choiceText: string) {
-  return [
-    {
-      role: 'system' as const,
-      content: `你是开放世界文字冒险游戏的叙事引擎。你只生成本轮剧情、结算描述、属性影响标签、隐藏状态更新、叙事轨道更新和下一轮三个行动选项。最终数值由前端规则层计算。${jsonOnlyRule}`
-    },
-    {
-      role: 'user' as const,
-      content: `根据玩家选择推进一轮冒险。
-
-世界：${game.world.name}
-世界概览：${game.world.overview}
-世界背景：${game.world.premise}
-世界局势：${game.world.worldDetail}
-核心悬念：${game.world.conflict}
-玩家身份：${game.world.playerIdentity}
-${stateContext(game)}
-
-上一轮标题：${game.current_story.title}
-上一轮正文：${game.current_story.body}
-玩家选择：${choiceText}
-
-硬性规则：
-1. 只允许属性字段 hp、san、atk、def。不要出现资源、金币、背包、体力、声望、等级。
-2. AI 不能返回 status、failed、completed、game_over，也不能直接宣布游戏结束。
-3. stat_effects 只能使用枚举标签，不能返回任何具体加减数字；前端会把标签换算成真实数值、clamp 并判断 hp <= 0。
-4. 如果发生危险或战斗，可以让 hp/san 使用 loss 标签；如果获得成长，可以让 atk/def 使用 gain 标签。轻微影响用 minor，中等影响用 medium，重大影响才用 major。
-5. choices 必须正好 3 个，id 为 A/B/C；除非前端之后判断结束，否则这些选项会用于下一轮。
-6. story_arc_updates 应帮助 100 轮长线不跑偏。
-7. stat_effects.reason 是一条结算原因短句，要和 story.body 发生的事件一致，不要包含具体数值。
-8. story.body 控制在 300-700 个中文字符，最多 5 段，必须给选项和状态字段留下输出空间。
-9. 输出必须符合这个 JSON 结构：
-${roundSchemaDescription}`
-    }
-  ];
-}
+const story = await generateRoundStoryStream(game, choiceText, signal, onPreview);
+const control = await generateRoundControl(game, choiceText, story, signal);
+const output = {
+  ...control,
+  schema_version: 'round_event_v1',
+  story
+};
+const { nextGame, status } = applyRoundOutput(game, output, choiceText);
 ```
+
+开场同理：
+
+```ts
+const story = await generateOpeningStoryStream(world, signal, onPreview);
+const control = await generateOpeningControl(world, story, signal);
+```
+
+其中：
+
+* `generateOpeningStoryStream` / `generateRoundStoryStream` 负责流式展示剧情正文。
+* `generateOpeningControl` / `generateRoundControl` 负责生成短控制 JSON。
+* `applyRoundOutput` 负责把控制 JSON 转换为真实数值变化，并判断失败或 100 轮完成。
+* 控制 JSON 失败时只重试 `generateOpeningControl` 或 `generateRoundControl`，不重写已经展示的剧情。
 
 #### 9.1.4 失败终局 Prompt
 
@@ -768,15 +871,9 @@ story_arc：${JSON.stringify(game.story_arc)}
 #### 9.1.6 JSON 修复 Prompt
 
 ```ts
-export function buildJsonRepairPrompt(rawText: string, schemaName: 'round' | 'finale') {
-  const schema =
-    schemaName === 'round'
-      ? roundSchemaDescription
-      : `{
-  "schema_version": "failure_finale_v1 或 completion_finale_v1",
-  "title": "标题",
-  "finale_story": "终幕剧情正文"
-}`;
+export function buildJsonRepairPrompt(rawText: string, schemaName: 'control' | 'finale', validationError: string) {
+  const schema = schemaName === 'control' ? controlSchemaDescription : finaleSchemaDescription;
+  const example = schemaName === 'control' ? roundControlExample : finaleOutputExample;
 
   return [
     {
@@ -787,8 +884,20 @@ export function buildJsonRepairPrompt(rawText: string, schemaName: 'round' | 'fi
       role: 'user' as const,
       content: `把下面内容修复为合法 JSON，并严格符合结构。不要添加解释。
 
-目标结构：
+字段契约：
 ${schema}
+
+合法示例：
+${example}
+
+校验错误：
+${validationError}
+
+修复规则：
+1. 只返回修复后的 JSON 对象。
+2. 字段名必须和示例一致，不能新增字段。
+3. 枚举值必须从字段契约中选择一个，不能使用带竖线的占位字符串。
+4. 如果原内容缺少可恢复字段，按待修复内容的语义补齐；无法判断时使用最保守的合法值。
 
 待修复内容：
 ${rawText}`
@@ -803,6 +912,7 @@ ${rawText}`
 
 ```ts
 import { z } from 'zod';
+import { EVENT_TYPES } from './types';
 
 const statImpactSchema = z.enum([
   'none',
@@ -829,16 +939,12 @@ const choiceSchema = z.object({
   text: z.string().min(2).max(80)
 });
 
-export const roundOutputSchema = z
+export const controlOutputSchema = z
   .object({
-    schema_version: z.literal('round_event_v1'),
-    story: z.object({
-      title: z.string().min(2).max(40),
-      body: z.string().min(40).max(2400)
-    }),
+    schema_version: z.literal('round_control_v1'),
     resolution: z.object({
       summary: z.string().min(2).max(300),
-      event_type: z.enum(['normal', 'combat', 'discovery', 'danger', 'rest', 'twist'])
+      event_type: z.enum(EVENT_TYPES)
     }),
     stat_effects: statEffectsSchema,
     hidden_state_updates: z
@@ -876,7 +982,7 @@ export const finaleOutputSchema = z
   })
   .strict();
 
-export type RoundOutputSchema = z.infer<typeof roundOutputSchema>;
+export type ControlOutputSchema = z.infer<typeof controlOutputSchema>;
 export type FinaleOutputSchema = z.infer<typeof finaleOutputSchema>;
 ```
 
@@ -886,17 +992,32 @@ export type FinaleOutputSchema = z.infer<typeof finaleOutputSchema>;
 async function parseWithRepair<T>(
   rawText: string,
   schema: z.ZodType<T>,
-  repairKind: 'round' | 'finale',
+  repairKind: 'control' | 'finale',
   signal?: AbortSignal
 ) {
+  let validationError = '未知错误';
+
   try {
-    const first = schema.safeParse(parseJsonObject(rawText));
+    const parsed = parseJsonObject(rawText);
+    const first = schema.safeParse(parsed);
     if (first.success) return first.data;
+    validationError = formatZodError(first.error);
   } catch {
-    // Parse failures still get one structured repair attempt.
+    validationError = 'JSON 解析失败：返回内容不是合法 JSON 对象，或存在多余文本、缺失括号、缺失引号、非法逗号。';
   }
 
-  const repaired = await chatCompletion(buildJsonRepairPrompt(rawText, repairKind), signal);
+  const repaired = await chatCompletion(
+    buildJsonRepairPrompt(rawText, repairKind, validationError),
+    signal,
+    undefined,
+    {
+      stream: false,
+      temperature: 0,
+      maxTokens: 1600,
+      responseFormat: 'json_object',
+      retryWithoutResponseFormat: true
+    }
+  );
   try {
     const second = schema.safeParse(parseJsonObject(repaired));
     if (second.success) return second.data;
@@ -914,7 +1035,7 @@ async function parseWithRepair<T>(
 * 当前属性不变化。
 * `hidden_state` 不更新。
 * `story_arc` 不更新。
-* UI 在选项区显示错误态和“重新生成本轮”按钮。
+* 已生成剧情保留，UI 在选项区显示错误态和“重新生成选项”按钮。
 
 ---
 
@@ -975,7 +1096,7 @@ async function parseWithRepair<T>(
 * 不展示地点、时间、气氛等额外状态标签。
 * 开场生成和每轮生成期间，剧情正文应使用流式输出逐步展示。
 * 生成期间不显示默认行动选项。
-* 只有模型完整返回、JSON 校验通过并完成状态计算后，才显示本轮三个行动选项。
+* 只有剧情文本生成完成、控制 JSON 校验通过并完成状态计算后，才显示本轮三个行动选项。
 
 行动选项区：
 
@@ -990,7 +1111,7 @@ async function parseWithRepair<T>(
 * 位于剧情正文下方、行动选项上方。
 * 开场剧情不展示结算区。
 * 剧情正文流式输出期间不展示结算区。
-* 本轮 JSON 校验成功、前端完成规则结算后展示。
+* 本轮控制 JSON 校验成功、前端完成规则结算后展示。
 * 展示前端计算出的真实属性变化，例如 `生命 -5`、`理智 -8`、`防御 +1`。
 * 展示 `stat_effects.reason` 作为原因短句。
 * 如果本轮没有属性变化，显示“属性无变化”。
@@ -1202,18 +1323,23 @@ game_history_summary
 * 支持 `stream: true`。
 * 实现 SSE 解析。
 * 拼接完整文本。
+* 支持非流式低温 JSON 调用。
+* 支持 `response_format: json_object`，并在接口不支持时自动降级重试。
 
 验收：
 
 * 输入简单 Prompt 能得到 `gpt-5.5` 返回。
 * 能正确处理 `data: [DONE]`。
+* 控制 JSON 调用可以关闭流式输出，并使用低温参数。
 
 ### 阶段 4：Prompt 与 Schema
 
 目标：
 
-* 实现开场 Prompt。
-* 实现每轮 Prompt。
+* 实现开场剧情文本 Prompt。
+* 实现开场控制 JSON Prompt。
+* 实现每轮剧情文本 Prompt。
+* 实现每轮控制 JSON Prompt。
 * 实现终局 Prompt。
 * 实现 JSON 修复 Prompt。
 * 定义 Zod schema。
@@ -1221,8 +1347,9 @@ game_history_summary
 验收：
 
 * 模型输出能被 parse。
-* schema 校验失败时能自动修复一次。
-* 修复失败不推进游戏。
+* 控制 JSON schema 校验失败时能自动修复一次。
+* JSON 修复 Prompt 会携带第一次 parse / schema 校验错误。
+* 控制 JSON 修复失败不推进游戏，且保留已生成剧情。
 
 ### 阶段 5：完整游戏流程
 
@@ -1265,9 +1392,9 @@ game_history_summary
 | --- | --- |
 | API Key 暴露 | 本地 Demo 可接受，正式部署必须改后端代理 |
 | 浏览器 CORS 阻止请求 | 若发生，使用 Vite 本地代理作为临时方案 |
-| 流式 JSON 被截断 | 只在 `[DONE]` 后 parse |
-| 模型输出非 JSON | 自动修复一次 |
-| 模型返回字段缺失 | schema 校验失败，进入修复 |
+| 控制 JSON 被截断 | 非流式短输出，限制为短控制 JSON，并设置足够 `max_tokens` |
+| 控制 JSON 非法 | 自动修复一次 |
+| 控制 JSON 字段缺失 | schema 校验失败，进入修复 |
 | 长线剧情漂移 | 使用 `story_arc` 约束主线和伏笔 |
 | 100 轮上下文过长 | 最近 3 轮 + 历史摘要 + hidden_state + story_arc |
 | 用户重复点击 | loading 锁定选项按钮 |
@@ -1330,7 +1457,7 @@ http://localhost:5173
 * 完整隐藏状态
 * 完整 `story_arc`
 * 完整终局判断
-* 完整 JSON 校验与修复
+* 完整控制 JSON 校验与修复
 
 ---
 

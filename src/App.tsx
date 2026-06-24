@@ -4,16 +4,31 @@ import { worlds } from './data/worlds';
 import {
   generateCompletionFinaleStream,
   generateFailureFinaleStream,
-  generateOpeningStream,
-  generateRoundStream,
+  generateOpeningControl,
+  generateOpeningStoryStream,
+  generateRoundControl,
+  generateRoundStoryStream,
   type StreamPreview
 } from './game/ai';
 import { applyRoundOutput, createInitialGameState, getSelectedChoice } from './game/rules';
-import type { Choice, GameState, PlayerStats, RoundSettlement, WorldDefinition } from './game/types';
+import type {
+  Choice,
+  GameState,
+  ModelControlOutput,
+  ModelRoundOutput,
+  PlayerStats,
+  RoundSettlement,
+  Story,
+  WorldDefinition
+} from './game/types';
 
 type Screen = 'home' | 'world-detail' | 'playing' | 'failed' | 'completed';
 type BusyState = 'idle' | 'opening-stream' | 'opening-deciding' | 'round-stream' | 'round-deciding' | 'finale-stream';
-type RetryTask = { kind: 'opening'; world: WorldDefinition } | { kind: 'round'; game: GameState; choiceText: string };
+type RetryTask =
+  | { kind: 'opening'; world: WorldDefinition }
+  | { kind: 'opening-control'; world: WorldDefinition; story: Story }
+  | { kind: 'round'; game: GameState; choiceText: string }
+  | { kind: 'round-control'; game: GameState; choiceText: string; story: Story };
 
 function isStreamingBusy(busy: BusyState) {
   return busy === 'opening-stream' || busy === 'round-stream' || busy === 'finale-stream';
@@ -86,11 +101,27 @@ const statLabels: Record<keyof PlayerStats, string> = {
 
 const eventTypeLabels: Record<RoundSettlement['resolution']['event_type'], string> = {
   normal: '事件',
+  exploration: '探索',
+  investigation: '调查',
+  social: '交流',
+  negotiation: '交涉',
   combat: '战斗',
+  ambush: '伏击',
+  escape: '逃脱',
+  stealth: '潜行',
+  hazard: '险境',
+  trap: '陷阱',
+  puzzle: '解谜',
   discovery: '发现',
-  danger: '危险',
+  twist: '转折',
   rest: '休整',
-  twist: '转折'
+  recovery: '恢复',
+  training: '训练',
+  upgrade: '强化',
+  resource: '资源',
+  ally: '援助',
+  sacrifice: '代价',
+  ritual: '仪式'
 };
 
 function SettlementPanel({ settlement }: { settlement: RoundSettlement }) {
@@ -267,6 +298,7 @@ function StoryPanel({
   onChoose,
   generationError,
   onRetry,
+  retryLabel,
   terminal
 }: {
   title: string;
@@ -277,6 +309,7 @@ function StoryPanel({
   onChoose?: (choiceId: Choice['id']) => void;
   generationError?: string;
   onRetry?: () => void;
+  retryLabel?: string;
   terminal?: boolean;
 }) {
   return (
@@ -317,7 +350,7 @@ function StoryPanel({
               </div>
               <button type="button" className="ghost-button compact-action" onClick={onRetry}>
                 <RotateCcw size={16} />
-                重新生成本轮
+                {retryLabel ?? '重新生成本轮'}
               </button>
             </div>
           ) : choices?.length && busy === 'idle' ? (
@@ -353,6 +386,7 @@ function GameShell({
   onChoose,
   generationError,
   onRetry,
+  retryLabel,
   onRestart,
   onHome
 }: {
@@ -361,6 +395,7 @@ function GameShell({
   onChoose?: (choiceId: Choice['id']) => void;
   generationError?: string;
   onRetry?: () => void;
+  retryLabel?: string;
   onRestart: () => void;
   onHome: () => void;
 }) {
@@ -384,6 +419,7 @@ function GameShell({
           onChoose={onChoose}
           generationError={generationError}
           onRetry={onRetry}
+          retryLabel={retryLabel}
           terminal={terminal}
         />
       </section>
@@ -412,6 +448,14 @@ export default function App() {
   const abortRef = useRef<AbortController | null>(null);
 
   const activeWorld = useMemo(() => selectedWorld ?? worlds[0], [selectedWorld]);
+
+  function combineRoundOutput(story: Story, control: ModelControlOutput): ModelRoundOutput {
+    return {
+      ...control,
+      schema_version: 'round_event_v1',
+      story
+    };
+  }
 
   function resetAbort() {
     abortRef.current?.abort();
@@ -456,33 +500,139 @@ export default function App() {
     setRetryTask({ kind: 'opening', world });
 
     try {
-      const opening = await generateOpeningStream(world, controller.signal, (preview) => {
+      const story = await generateOpeningStoryStream(world, controller.signal, (preview) => {
         applyStoryPreview(preview);
         if (preview.bodyComplete) setBusy('opening-deciding');
       });
+      setGame({ ...initial, current_story: story, choices: [] });
+      await runOpeningControl(world, story, controller);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '开场生成失败，请重试。');
+      setRetryTask({ kind: 'opening', world });
+    } finally {
+      setBusy('idle');
+    }
+  }
+
+  async function runOpeningControl(world: WorldDefinition, story: Story, existingController?: AbortController) {
+    const controller = existingController ?? resetAbort();
+    const initial = createInitialGameState(world);
+    setBusy('opening-deciding');
+    setError('');
+    setRetryTask({ kind: 'opening-control', world, story });
+
+    try {
+      const control = await generateOpeningControl(world, story, controller.signal);
       setGame({
         ...initial,
-        current_story: opening.story,
-        choices: opening.choices,
+        current_story: story,
+        choices: control.choices,
         hidden_state: {
           ...initial.hidden_state,
-          ...initial.hidden_state,
-          progress: Math.max(0, opening.hidden_state_updates.progress ?? 0),
-          key_clues: opening.hidden_state_updates.key_clues ?? [],
-          allies: opening.hidden_state_updates.allies ?? [],
-          injuries: opening.hidden_state_updates.injuries ?? [],
-          flags: opening.hidden_state_updates.flags ?? [],
-          major_choices: opening.hidden_state_updates.major_choices ?? []
+          progress: Math.max(0, control.hidden_state_updates.progress ?? 0),
+          key_clues: control.hidden_state_updates.key_clues ?? [],
+          allies: control.hidden_state_updates.allies ?? [],
+          injuries: control.hidden_state_updates.injuries ?? [],
+          flags: control.hidden_state_updates.flags ?? [],
+          major_choices: control.hidden_state_updates.major_choices ?? []
         },
         story_arc: {
           ...initial.story_arc,
-          ...(opening.story_arc_updates ?? {})
+          ...(control.story_arc_updates ?? {})
         }
       });
       setRetryTask(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : '开场生成失败，请重试。');
-      setRetryTask({ kind: 'opening', world });
+      setError(err instanceof Error ? err.message : '开场选项生成失败，请重试。');
+      setRetryTask({ kind: 'opening-control', world, story });
+    } finally {
+      setBusy('idle');
+    }
+  }
+
+  async function finishRound(baseGame: GameState, output: ModelRoundOutput, choiceText: string, controller: AbortController) {
+    const { nextGame, status } = applyRoundOutput(baseGame, output, choiceText);
+    setGame(nextGame);
+    setRetryTask(null);
+
+    if (status === 'failed') {
+      setBusy('finale-stream');
+      setScreen('failed');
+      setGame({
+        ...nextGame,
+        choices: [],
+        finale: {
+          schema_version: 'failure_finale_v1',
+          title: '冒险终止',
+          finale_story: ''
+        }
+      });
+      try {
+        const finale = await generateFailureFinaleStream(nextGame, controller.signal, (preview) =>
+          applyStoryPreview(preview, 'failure_finale_v1')
+        );
+        setGame({ ...nextGame, finale, choices: [] });
+      } catch {
+        setGame({
+          ...nextGame,
+          choices: [],
+          finale: {
+            schema_version: 'failure_finale_v1',
+            title: '冒险终止',
+            finale_story: `${nextGame.current_story.body}\n\n${output.resolution.summary}`
+          }
+        });
+      }
+    } else if (status === 'completed') {
+      setBusy('finale-stream');
+      setScreen('completed');
+      setGame({
+        ...nextGame,
+        choices: [],
+        finale: {
+          schema_version: 'completion_finale_v1',
+          title: '终章',
+          finale_story: ''
+        }
+      });
+      try {
+        const finale = await generateCompletionFinaleStream(nextGame, controller.signal, (preview) =>
+          applyStoryPreview(preview, 'completion_finale_v1')
+        );
+        setGame({ ...nextGame, finale, choices: [] });
+      } catch {
+        setGame({
+          ...nextGame,
+          choices: [],
+          finale: {
+            schema_version: 'completion_finale_v1',
+            title: '终章',
+            finale_story: `${nextGame.current_story.body}\n\n这段冒险已经抵达第 100 轮，故事在此收束。`
+          }
+        });
+      }
+      setScreen('completed');
+    }
+  }
+
+  async function runRoundControl(
+    baseGame: GameState,
+    choiceText: string,
+    story: Story,
+    existingController?: AbortController
+  ) {
+    const controller = existingController ?? resetAbort();
+    setBusy('round-deciding');
+    setError('');
+    setRetryTask({ kind: 'round-control', game: baseGame, choiceText, story });
+
+    try {
+      const control = await generateRoundControl(baseGame, choiceText, story, controller.signal);
+      const output = combineRoundOutput(story, control);
+      await finishRound(baseGame, output, choiceText, controller);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '本轮选项生成失败，请重试。');
+      setRetryTask({ kind: 'round-control', game: baseGame, choiceText, story });
     } finally {
       setBusy('idle');
     }
@@ -504,79 +654,14 @@ export default function App() {
     setRetryTask({ kind: 'round', game: baseGame, choiceText });
 
     try {
-      const output = await generateRoundStream(
-        baseGame,
-        choiceText,
-        controller.signal,
-        (preview) => {
-          applyStoryPreview(preview);
-          if (preview.bodyComplete) setBusy('round-deciding');
-        }
-      );
-      const { nextGame, status } = applyRoundOutput(baseGame, output, choiceText);
-      setGame(nextGame);
-      setRetryTask(null);
-
-      if (status === 'failed') {
-        setBusy('finale-stream');
-        setScreen('failed');
-        setGame({
-          ...nextGame,
-          choices: [],
-          finale: {
-            schema_version: 'failure_finale_v1',
-            title: '冒险终止',
-            finale_story: ''
-          }
-        });
-        try {
-          const finale = await generateFailureFinaleStream(nextGame, controller.signal, (preview) =>
-            applyStoryPreview(preview, 'failure_finale_v1')
-          );
-          setGame({ ...nextGame, finale, choices: [] });
-        } catch {
-          setGame({
-            ...nextGame,
-            choices: [],
-            finale: {
-              schema_version: 'failure_finale_v1',
-              title: '冒险终止',
-              finale_story: `${nextGame.current_story.body}\n\n${output.resolution.summary}`
-            }
-          });
-        }
-      } else if (status === 'completed') {
-        setBusy('finale-stream');
-        setScreen('completed');
-        setGame({
-          ...nextGame,
-          choices: [],
-          finale: {
-            schema_version: 'completion_finale_v1',
-            title: '终章',
-            finale_story: ''
-          }
-        });
-        try {
-          const finale = await generateCompletionFinaleStream(nextGame, controller.signal, (preview) =>
-            applyStoryPreview(preview, 'completion_finale_v1')
-          );
-          setGame({ ...nextGame, finale, choices: [] });
-        } catch {
-          setGame({
-            ...nextGame,
-            choices: [],
-            finale: {
-              schema_version: 'completion_finale_v1',
-              title: '终章',
-              finale_story: `${nextGame.current_story.body}\n\n这段冒险已经抵达第 100 轮，故事在此收束。`
-            }
-          });
-        }
-        setScreen('completed');
-      }
+      const story = await generateRoundStoryStream(baseGame, choiceText, controller.signal, (preview) => {
+        applyStoryPreview(preview);
+        if (preview.bodyComplete) setBusy('round-deciding');
+      });
+      setGame({ ...baseGame, current_story: story, choices: [], last_settlement: undefined });
+      await runRoundControl(baseGame, choiceText, story, controller);
     } catch (err) {
-      setError(err instanceof Error ? err.message : '本轮生成失败，请重试。');
+      setError(err instanceof Error ? err.message : '本轮剧情生成失败，请重试。');
       setRetryTask({ kind: 'round', game: baseGame, choiceText });
     } finally {
       setBusy('idle');
@@ -598,6 +683,16 @@ export default function App() {
       return;
     }
 
+    if (retryTask.kind === 'opening-control') {
+      void runOpeningControl(retryTask.world, retryTask.story);
+      return;
+    }
+
+    if (retryTask.kind === 'round-control') {
+      void runRoundControl(retryTask.game, retryTask.choiceText, retryTask.story);
+      return;
+    }
+
     void runRound(retryTask.game, retryTask.choiceText);
   }
 
@@ -611,6 +706,10 @@ export default function App() {
   }
 
   const restartWorld = () => startWorld(game?.world ?? activeWorld);
+  const retryLabel =
+    retryTask?.kind === 'opening-control' || retryTask?.kind === 'round-control'
+      ? '重新生成选项'
+      : '重新生成本轮';
 
   return (
     <>
@@ -637,6 +736,7 @@ export default function App() {
           onChoose={handleChoice}
           generationError={error}
           onRetry={retryGeneration}
+          retryLabel={retryLabel}
           onRestart={restartWorld}
           onHome={goHome}
         />

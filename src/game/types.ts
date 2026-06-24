@@ -34,9 +34,36 @@ export type Story = {
   body: string;
 };
 
+export const EVENT_TYPES = [
+  'normal',
+  'exploration',
+  'investigation',
+  'social',
+  'negotiation',
+  'combat',
+  'ambush',
+  'escape',
+  'stealth',
+  'hazard',
+  'trap',
+  'puzzle',
+  'discovery',
+  'twist',
+  'rest',
+  'recovery',
+  'training',
+  'upgrade',
+  'resource',
+  'ally',
+  'sacrifice',
+  'ritual'
+] as const;
+
+export type EventType = (typeof EVENT_TYPES)[number];
+
 export type Resolution = {
   summary: string;
-  event_type: 'normal' | 'combat' | 'discovery' | 'danger' | 'rest' | 'twist';
+  event_type: EventType;
 };
 
 export type StatImpact =
@@ -56,14 +83,18 @@ export type StatEffects = {
   reason: string;
 };
 
-export type ModelRoundOutput = {
-  schema_version: 'round_event_v1';
-  story: Story;
+export type ModelControlOutput = {
+  schema_version: 'round_control_v1';
   resolution: Resolution;
   stat_effects: StatEffects;
   hidden_state_updates: Partial<Omit<HiddenState, 'progress'>> & { progress?: number };
   story_arc_updates?: Partial<StoryArc>;
   choices: Choice[];
+};
+
+export type ModelRoundOutput = Omit<ModelControlOutput, 'schema_version'> & {
+  schema_version: 'round_event_v1';
+  story: Story;
 };
 
 export type FinaleOutput = {
