@@ -29,6 +29,12 @@
 
 <sub>Captured from an earlier demo build. Interface details may differ from the current version.</sub>
 
+### Inside the Adventure
+
+![Arcane Academy gameplay: character portrait, stats, narrative, and three action choices](./docs/images/gameplay-magic.png)
+
+The current Chinese interface during an actual run: character portrait and stats on the left, AI-generated narrative and three available actions on the right. Story text and choices vary between runs.
+
 ## What Makes It Different
 
 | | Your adventure |
