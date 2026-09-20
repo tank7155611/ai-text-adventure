@@ -1,4 +1,16 @@
 export type GameStatus = 'idle' | 'playing' | 'failed' | 'completed';
+export type Language = 'zh' | 'en';
+
+export type EndingKind = 'death' | 'collapse' | 'incomplete' | 'bittersweet' | 'standard' | 'perfect';
+
+export type EndingContext = {
+  kind: EndingKind;
+  progress: number;
+  sanity: number;
+  clueCount: number;
+  unresolvedHookCount: number;
+  communitySaved?: boolean;
+};
 
 export type PlayerStats = {
   hp: number;
@@ -27,7 +39,10 @@ export type StoryArc = {
 export type Choice = {
   id: 'A' | 'B' | 'C';
   text: string;
+  plan: ChoicePlan;
 };
+
+export type ChoiceCheck = 'attack' | 'defense' | 'sanity';
 
 export type Story = {
   title: string;
@@ -66,28 +81,27 @@ export type Resolution = {
   event_type: EventType;
 };
 
-export type StatImpact =
-  | 'none'
-  | 'minor_loss'
-  | 'medium_loss'
-  | 'major_loss'
-  | 'minor_gain'
-  | 'medium_gain'
-  | 'major_gain';
+export type ChoiceTone = 'calm' | 'gain' | 'loss' | 'tradeoff' | 'major_gain' | 'major_loss';
 
-export type StatEffects = {
-  hp: StatImpact;
-  san: StatImpact;
-  atk: StatImpact;
-  def: StatImpact;
-  reason: string;
+export type ChoicePlan = {
+  risk_label: string;
+  tone: ChoiceTone;
+  stat_changes: Partial<PlayerStats>;
+  progress: number;
+  intent: string;
+  settlement_hint: string;
+  checks: ChoiceCheck[];
+  branch_action?: 'rescue' | 'shelter' | 'evacuate';
 };
 
 export type ModelControlOutput = {
   schema_version: 'round_control_v1';
   resolution: Resolution;
-  stat_effects: StatEffects;
-  hidden_state_updates: Partial<Omit<HiddenState, 'progress'>> & { progress?: number };
+  hidden_state_updates: Partial<Omit<HiddenState, 'progress'>> & {
+    progress?: number;
+    removed_allies?: string[];
+    healed_injuries?: string[];
+  };
   story_arc_updates?: Partial<StoryArc>;
   choices: Choice[];
 };
@@ -98,13 +112,15 @@ export type ModelRoundOutput = Omit<ModelControlOutput, 'schema_version'> & {
 };
 
 export type FinaleOutput = {
-  schema_version: 'failure_finale_v1' | 'completion_finale_v1';
+  schema_version: 'finale_v1';
+  ending_kind: EndingKind;
   title: string;
   finale_story: string;
 };
 
 export type WorldDefinition = {
   id: string;
+  language: Language;
   name: string;
   tagline: string;
   cardDescription: string;
@@ -127,17 +143,23 @@ export type HistoryEntry = {
   player_choice?: string;
   resolution_summary?: string;
   stat_changes?: Partial<PlayerStats>;
+  facts?: string[];
 };
 
 export type RoundSettlement = {
   resolution: Resolution;
   stat_changes: Partial<PlayerStats>;
   reason: string;
+  modifiers?: string[];
 };
 
 export type GameState = {
+  run_seed: string;
+  community: { stage: 'unmet' | 'rescued' | 'evacuated'; last_rest_round: number };
+  chapter_memories: string[];
   status: GameStatus;
   round: number;
+  language: Language;
   world: WorldDefinition;
   player_stats: PlayerStats;
   hidden_state: HiddenState;
@@ -147,5 +169,6 @@ export type GameState = {
   recent_history: HistoryEntry[];
   game_history_summary: string;
   last_settlement?: RoundSettlement;
+  finale_context?: EndingContext;
   finale?: FinaleOutput;
 };

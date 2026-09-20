@@ -83,7 +83,8 @@ button {
 
 .brand,
 .model-pill,
-.round-label {
+.round-label,
+.top-actions {
   display: inline-flex;
   align-items: center;
   gap: 10px;
@@ -101,7 +102,6 @@ button {
 }
 
 .model-pill {
-  justify-self: end;
   min-height: 32px;
   padding: 0 12px;
   border: 1px solid rgba(211, 177, 96, 0.35);
@@ -109,6 +109,24 @@ button {
   color: #e5c779;
   background: rgba(13, 16, 18, 0.46);
   font-size: 13px;
+}
+
+.top-actions {
+  justify-self: end;
+}
+
+.language-toggle {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid rgba(232, 201, 132, 0.26);
+  border-radius: 999px;
+  color: #f4dfaa;
+  background: rgba(14, 17, 19, 0.62);
+  cursor: pointer;
+}
+
+.language-toggle:hover {
+  border-color: rgba(232, 201, 132, 0.55);
 }
 
 .home-content {
@@ -249,6 +267,27 @@ button {
     background 160ms ease;
 }
 
+.game-home-button {
+  position: absolute;
+  top: 84px;
+  left: 38px;
+  z-index: 6;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 0 11px;
+  border: 1px solid rgba(232, 201, 132, 0.28);
+  border-radius: 999px;
+  color: #f4dfaa;
+  background: rgba(14, 17, 19, 0.62);
+  cursor: pointer;
+}
+
+.game-home-button:hover {
+  border-color: rgba(232, 201, 132, 0.55);
+}
+
 .primary-button {
   min-height: 42px;
   padding: 0 18px;
@@ -370,6 +409,9 @@ button {
 }
 
 .side-panel {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
   align-self: stretch;
   padding: 24px;
 }
@@ -440,15 +482,67 @@ button {
   gap: 8px;
 }
 
+.protagonist-card {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 250px;
+  margin-top: 20px;
+  overflow: hidden;
+  border: 1px solid rgba(232, 201, 132, 0.16);
+  border-radius: 8px;
+  background: #0d1012;
+}
+
+.protagonist-card img {
+  width: 100%;
+  height: 100%;
+  min-height: 250px;
+  object-fit: cover;
+  object-position: center 28%;
+  filter: saturate(0.92) contrast(1.04);
+}
+
+.protagonist-shade {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(7, 9, 11, 0.08), rgba(7, 9, 11, 0.18) 48%, rgba(7, 9, 11, 0.82)),
+    linear-gradient(90deg, rgba(7, 9, 11, 0.28), transparent 45%, rgba(7, 9, 11, 0.24));
+}
+
+.protagonist-caption {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  left: 14px;
+}
+
+.protagonist-caption span {
+  display: block;
+  margin-bottom: 5px;
+  color: #d7ad56;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.protagonist-caption strong {
+  display: block;
+  color: #f5e8cb;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .story-column {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto auto auto auto;
   min-width: 0;
-  padding: 24px;
+  min-height: 0;
+  overflow: hidden;
+  padding: 18px 24px 20px;
 }
 
 .story-header {
-  padding-bottom: 18px;
+  padding-bottom: 10px;
   border-bottom: 1px solid rgba(232, 201, 132, 0.13);
 }
 
@@ -461,7 +555,9 @@ button {
 
 .story-header h1 {
   min-width: 0;
-  font-size: 28px;
+  margin-top: 4px;
+  font-size: 24px;
+  line-height: 1.18;
 }
 
 .streaming-pill {
@@ -469,8 +565,8 @@ button {
   flex: 0 0 auto;
   align-items: center;
   gap: 6px;
-  min-height: 30px;
-  padding: 0 10px;
+  min-height: 28px;
+  padding: 0 9px;
   border: 1px solid rgba(232, 201, 132, 0.24);
   border-radius: 999px;
   color: #f4d78b;
@@ -478,14 +574,33 @@ button {
   font-size: 13px;
 }
 
+.ending-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgba(232, 201, 132, 0.45);
+  border-radius: 999px;
+  color: #f4d78b;
+  background: rgba(20, 17, 11, 0.62);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
 .story-scroll {
+  height: clamp(190px, 30vh, 300px);
   min-height: 0;
-  margin: 18px 0;
+  margin: 14px 0;
   padding-right: 16px;
   overflow-y: auto;
   color: #eadcc1;
   font-size: 17px;
   line-height: 1.9;
+}
+
+.story-scroll.streaming {
+  height: clamp(340px, 54vh, 520px);
 }
 
 .story-scroll p {
@@ -494,6 +609,25 @@ button {
 
 .stream-placeholder {
   color: rgba(234, 220, 193, 0.62);
+}
+
+.story-inline-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 34px;
+  margin-top: 2px;
+  padding: 0 11px;
+  border: 1px solid rgba(232, 201, 132, 0.18);
+  border-radius: 999px;
+  color: #f1dca8;
+  background: rgba(20, 17, 11, 0.48);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.story-inline-loading svg {
+  color: #e3bd61;
 }
 
 .story-scroll::-webkit-scrollbar {
@@ -577,7 +711,56 @@ button {
   line-height: 1.6;
 }
 
+.settlement-modifiers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.settlement-modifiers span {
+  display: inline-flex;
+  min-height: 22px;
+  align-items: center;
+  padding: 0 8px;
+  border: 1px solid rgba(232, 201, 132, 0.14);
+  border-radius: 999px;
+  color: #cdbb96;
+  background: rgba(255, 255, 255, 0.035);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.finale-callout {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 0 0 16px;
+  padding: 13px 14px;
+  border: 1px solid rgba(232, 201, 132, 0.24);
+  border-radius: 8px;
+  background: rgba(36, 28, 18, 0.48);
+}
+
+.finale-callout strong,
+.finale-callout span {
+  display: block;
+}
+
+.finale-callout strong {
+  margin-bottom: 4px;
+  color: #fff0cf;
+}
+
+.finale-callout span {
+  color: #d9c9a8;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .choice-area {
+  min-height: 0;
   padding-top: 16px;
   border-top: 1px solid rgba(232, 201, 132, 0.13);
 }
@@ -590,6 +773,23 @@ button {
 .choice-list {
   display: grid;
   gap: 10px;
+  max-height: 186px;
+  padding-right: 8px;
+  overflow-y: auto;
+}
+
+.choice-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.choice-list::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 999px;
+}
+
+.choice-list::-webkit-scrollbar-thumb {
+  background: rgba(217, 176, 91, 0.55);
+  border-radius: 999px;
 }
 
 .choice-loading {
@@ -746,7 +946,7 @@ button {
   }
 
   .round-label,
-  .model-pill {
+  .top-actions {
     justify-self: start;
   }
 
@@ -760,5 +960,12 @@ button {
     bottom: auto;
     justify-content: flex-end;
     padding: 0 18px 24px;
+  }
+
+  .game-home-button {
+    position: relative;
+    top: auto;
+    left: auto;
+    margin: 0 18px 8px;
   }
 }

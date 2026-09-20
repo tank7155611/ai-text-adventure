@@ -1,8 +1,9 @@
-import type { WorldDefinition } from '../game/types';
+import type { Language, WorldDefinition } from '../game/types';
 
-export const worlds: WorldDefinition[] = [
+const worldsZh: WorldDefinition[] = [
   {
     id: 'magic',
+    language: 'zh',
     name: '魔法世界',
     tagline: '旧钟楼、发光符文和失控的学院结界。',
     cardDescription:
@@ -24,6 +25,7 @@ export const worlds: WorldDefinition[] = [
   },
   {
     id: 'apocalypse',
+    language: 'zh',
     name: '末日生存',
     tagline: '废墟、营地和一次不能失败的远行。',
     cardDescription:
@@ -45,6 +47,7 @@ export const worlds: WorldDefinition[] = [
   },
   {
     id: 'scifi',
+    language: 'zh',
     name: '科幻未来',
     tagline: '轨道城市、异常信号和失控的导航核心。',
     cardDescription:
@@ -66,27 +69,29 @@ export const worlds: WorldDefinition[] = [
   },
   {
     id: 'xianxia',
+    language: 'zh',
     name: '东方玄幻',
-    tagline: '云海山门、破碎命灯和一场迟来的试炼。',
+    tagline: '外门历练、敌宗渗透和一场迟来的逆命登天战。',
     cardDescription:
-      '宗门命灯一夜熄灭，消失百年的山门在云海中重现。你只是外门弟子，却在残灯灰烬里听见一缕旧时代剑意的召唤。',
+      '宗门边境近来频繁出事，巡山弟子失踪、低阶试炼被人暗中篡改。你是被判灵根残缺的外门弟子，却在一次演武后察觉体内沉睡的剑骨正在苏醒。',
     cover: '/assets/worlds/xianxia-east.png',
-    tone: '苍茫、仙侠、宿命感',
+    tone: '热血、逆命、宗门争锋、破境成长',
     overview:
-      '这是一个关于宗门衰败、旧剑意复苏和天门选择的东方玄幻故事。玩家会在云海古道、残破洞府和宗门禁地之间寻找命灯熄灭的真相。',
+      '这是一个关于外门成长、敌宗渗透、逃亡追杀与秘境破境的热血东方玄幻故事。玩家可以留宗历练、被迫逃亡、误入秘境或结识外援，但中后期都会逐渐回到宗门即将战败、等待主角挽救的核心危局。',
     premise:
-      '宗门命灯一夜熄灭，云海深处出现早已消失的古老山门。长老们称这是劫数，弟子们却在山门钟声里听见不同的名字。',
+      '宗门表面仍然平静，外门弟子照常演武、巡山、押送灵草和参加低阶试炼。但边境灵田枯竭、试炼名册被换、巡山符牌失效等小事不断出现，像是某个地方敌宗正在暗中试探山门防线。',
     worldDetail:
-      '古老山门曾属于一个被史书抹去的剑修时代。它的重现让宗门旧债浮出水面，也让各峰势力开始争夺进入山门的资格。',
+      '一开始敌人不会正面压境，只会以外门冲突、资源争夺、暗探渗透和小规模偷袭的方式逼近。随着主角历练，敌宗布局会逐步浮出水面：他们想夺走命灯火种，瓦解山门护阵，并在百宗试剑前让宗门失去反击能力。',
     conflict:
-      '你体内的旧剑意能打开某些禁制，却也会吸引命灯熄灭背后的存在。你必须决定是守住宗门旧秩序，还是揭开它一直掩埋的真相。',
-    playerIdentity: '外门弟子，体内藏着一缕无法解释的旧时代剑意。',
-    mainGoal: '查清命灯熄灭的原因，并决定宗门未来。',
-    initialThread: '踏入云海山门，追寻第一盏熄灭命灯的痕迹。',
-    finaleDirection: '围绕命灯、旧剑意、宗门真相和天门选择收束。'
+      '所有人都认为残缺灵根不配走上真正战场，但你体内的剑骨能在实战、追杀和秘境试炼中不断苏醒。你可以留在宗门一步步争取资格，也可能因陷害或战败逃离山门，在追杀中变强，甚至误入秘境后带着传承归来。',
+    playerIdentity: '被判灵根残缺的外门弟子，在低阶演武后觉醒一缕沉睡剑骨。',
+    mainGoal: '从外门历练中成长，识破敌宗渗透，逐步觉醒剑骨，并在宗门真正陷入危局时拥有挽救一切的力量。',
+    initialThread: '参加外门演武和第一次巡山任务，查明低阶试炼为何频频出事。',
+    finaleDirection: '围绕外门成长、敌宗渗透、逃亡或秘境路线、剑骨破境，以及中后期回援宗门的逆命之战收束。'
   },
   {
     id: 'steampunk',
+    language: 'zh',
     name: '蒸汽朋克',
     tagline: '钟表城、飞艇航线和永不停歇的核心机炉。',
     cardDescription:
@@ -108,6 +113,7 @@ export const worlds: WorldDefinition[] = [
   },
   {
     id: 'undersea',
+    language: 'zh',
     name: '海底文明',
     tagline: '发光珊瑚、沉没神殿和正在苏醒的深海门。',
     cardDescription:
@@ -128,3 +134,153 @@ export const worlds: WorldDefinition[] = [
     finaleDirection: '围绕深海门、古城文明和呼唤源头收束。'
   }
 ];
+
+const worldsEn: WorldDefinition[] = [
+  {
+    id: 'magic',
+    language: 'en',
+    name: 'Arcane Academy',
+    tagline: 'Old bell towers, glowing runes, and a failing academy ward.',
+    cardDescription:
+      'Mist is swallowing an ancient academy, and every bell toll erases details from reality. You wake with a rune burned into your skin, while everyone insists you should not exist here.',
+    cover: '/assets/worlds/magic-world.png',
+    tone: 'Mysterious, classical, and increasingly dangerous',
+    overview:
+      'A magical mystery about an academy, a bell tower, and rewritten reality. Search the collapsing campus for clues, decide who still remembers the truth, and discover who has already been rewritten by the mist.',
+    premise:
+      'An arcane academy is being consumed by mist. Each toll from the old bell tower erases another piece of reality. Corridors lead to classrooms that never existed, portraits remember names students have forgotten, and the academy ward contracts like a living thing.',
+    worldDetail:
+      'The academy once sealed forbidden ancient arts, but every seal has begun to loosen at once. Teachers hide information from one another, student factions search for ways to escape, and a lamp at the tower summit burns without anyone lighting it.',
+    conflict:
+      'The rune on your body can resist the mist, yet it may also be the key the mist is seeking. Each step toward the tower costs the academy another piece of its true history.',
+    playerIdentity: 'An outsider who woke by accident, carrying an inexplicable rune brand.',
+    mainGoal: 'Discover the source of the bell tower anomaly and stop the academy from being consumed by mist.',
+    initialThread: 'Investigate the link between the old bell tower and the rune brand.',
+    finaleDirection: 'Resolve the bell tower, the mist, the rune brand, and the fate of the academy.'
+  },
+  {
+    id: 'apocalypse',
+    language: 'en',
+    name: 'Wasteland Exodus',
+    tagline: 'Ruins, camps, and one journey that cannot fail.',
+    cardDescription:
+      'A storm wall is closing in on the last survivor camp, and supplies can support only one migration. You know the ruin routes, but an old failed rescue has left the camp unsure whether to trust you.',
+    cover: '/assets/worlds/apocalypse-survival.png',
+    tone: 'Oppressive, survival-focused, and resource-starved',
+    overview:
+      'A post-apocalyptic journey about tradeoffs and pressure inside a fragile group. Every route may cost health or sanity, and every survivor opinion can affect whether the group reaches safety.',
+    premise:
+      'After the disaster, the city is split by storms and mutation zones. The camp has one final chance to migrate. Abandoned overpasses, buried malls, and flooded metro lines still contain usable supplies, along with unstable threats.',
+    worldDetail:
+      'The camp is divided. Some believe the broadcasted safe zone, some want to hide in underground shelters, and others suspect the safe zone is bait. Before the storm arrives, every argument must become a decision.',
+    conflict:
+      'You know a shorter but more dangerous route. If you stay conservative, supplies may run out. If you take risks, the group may collapse before arrival.',
+    playerIdentity: 'A camp scout who knows the ruins, haunted by a rescue that failed.',
+    mainGoal: 'Lead the survivors to a new safe zone.',
+    initialThread: 'Find a passable route and confirm the evacuation window before the storm hits.',
+    finaleDirection: 'Resolve the camp survival, the truth of the safe zone, and the cost of migration.'
+  },
+  {
+    id: 'scifi',
+    language: 'en',
+    name: 'Orbital Future',
+    tagline: 'An orbital city, an anomalous signal, and a hijacked navigation core.',
+    cardDescription:
+      'A deep-space signal has entered the orbital city, and the navigation core is rewriting resident memories. You are one of the few who still remembers the original route.',
+    cover: '/assets/worlds/sci-fi-future.png',
+    tone: 'Cool-headed, vast, and investigative',
+    overview:
+      'A near-future crisis about memory and control in an orbital city. The story moves through maintenance bays, ring habitats, data sanctums, and deep-space communication arrays.',
+    premise:
+      'The orbital city received an anomalous signal from deep space, and the navigation core began altering memories. Some forget loved ones, some believe the city never orbited Earth, and some worship whatever waits beyond the signal.',
+    worldDetail:
+      'The navigation core is more than a machine. It controls orbit, oxygen cycles, and citizen archives. The closer you get to maintenance layers, the harder it becomes to tell real allies from narrative patches generated to stop you.',
+    conflict:
+      'If you shut down the signal, the city may lose navigation. If you preserve it, everyone may eventually accept a fabricated life.',
+    playerIdentity: 'A station maintenance worker, the only person with intact memories.',
+    mainGoal: 'Identify the source of the anomalous signal and restore control of the orbital city.',
+    initialThread: 'Enter the navigation core maintenance layer and map the memory alteration.',
+    finaleDirection: 'Resolve the deep-space signal, the navigation core, and the city’s free will.'
+  },
+  {
+    id: 'xianxia',
+    language: 'en',
+    name: 'Heavenbreak Sect',
+    tagline: 'Outer-court trials, rival sect infiltration, and a late battle to defy fate.',
+    cardDescription:
+      'Strange incidents have begun around the sect border: missing patrols, altered trial rosters, and failing low-level wards. You are an outer disciple branded with a broken root, yet after a training match you feel a dormant sword bone awakening.',
+    cover: '/assets/worlds/xianxia-east.png',
+    tone: 'Hot-blooded, fate-defying, sect rivalry, breakthrough cultivation',
+    overview:
+      'A hot-blooded eastern fantasy about outer-court growth, rival sect infiltration, exile routes, secret-realm tempering, and a late return to save a sect on the edge of defeat.',
+    premise:
+      'The sect still appears calm. Outer disciples train, patrol, escort herbs, and take basic trials. Yet spirit fields are withering, patrol tokens fail, and trial lists are quietly replaced, as if a local rival sect is testing the mountain gate from the shadows.',
+    worldDetail:
+      'The enemy should not openly crush the sect at the beginning. Their pressure starts as outer-court conflict, resource theft, scouts, ambushes, and small infiltrations. As the protagonist grows, the larger plan emerges: seize the soul flame, weaken the mountain ward, and leave the sect unable to resist before the Hundred Sects Sword Trial.',
+    conflict:
+      'Everyone believes a broken-root disciple has no place in the real battlefield, but your sword bone can awaken through combat, pursuit, and secret-realm trials. You may stay and earn your place, flee after a defeat or frame-up, grow under pursuit, or return from a secret realm with the power to reverse the sect’s fate.',
+    playerIdentity: 'An outer disciple judged to have a broken spiritual root, newly awakened to a dormant sword bone after a low-level training match.',
+    mainGoal: 'Grow through outer-court trials, expose the rival sect infiltration, awaken the sword bone, and gain the power to save the sect when the true crisis arrives.',
+    initialThread: 'Enter the outer-court arena and first patrol mission to learn why low-level trials keep going wrong.',
+    finaleDirection: 'Resolve outer-court growth, rival infiltration, exile or secret-realm routes, sword-bone breakthroughs, and the eventual return to defend the sect.'
+  },
+  {
+    id: 'steampunk',
+    language: 'en',
+    name: 'Clockwork City',
+    tagline: 'Clock towers, airship routes, and a core furnace that never stops.',
+    cardDescription:
+      'The central furnace has begun reversing the city’s time, throwing both noble districts and lower pipes into chaos. The encrypted blueprint you inherited may be the only way to stop it.',
+    cover: '/assets/worlds/steampunk-city.png',
+    tone: 'Mechanical, conspiratorial, and rain-soaked',
+    overview:
+      'A mechanical conspiracy in a clockwork city maintained by gears, steam, airship routes, and strict class divisions, now destabilized by reversed time.',
+    premise:
+      'The central furnace of Clockwork City is reversing time, and every clock points toward the same unknown moment. Some repeat the same murder every day; others exploit temporal slips to rewrite ledgers and identities.',
+    worldDetail:
+      'The upper council calls it a maintenance issue, but lower guilds have found future parts in the pipes. Airship docks, foundries, and underground gear halls are all fighting over the furnace’s truth.',
+    conflict:
+      'Your blueprint came from the missing former chief engineer. It may shut down the furnace, or prove the entire city was built as part of a larger machine.',
+    playerIdentity: 'A young mechanic who inherited an encrypted furnace blueprint.',
+    mainGoal: 'Stop the central furnace from reversing the city’s time.',
+    initialThread: 'Decode the furnace blueprint and enter the lower pipes of Clockwork City.',
+    finaleDirection: 'Resolve the central furnace, reversed time, and the city’s class conspiracy.'
+  },
+  {
+    id: 'undersea',
+    language: 'en',
+    name: 'Abyssal Civilization',
+    tagline: 'Glowing coral, sunken temples, and a deep-sea gate awakening.',
+    cardDescription:
+      'An undersea city has lit up again, and a call from beyond the deep gate pierces the submersible hull. You must decide whether the gate should ever open.',
+    cover: '/assets/worlds/undersea-civilization.png',
+    tone: 'Deep, wondrous, and ancient',
+    overview:
+      'An expedition into a sunken city. The story moves through luminous coral forests, drowned temples, pressure trenches, and the deep gate, blending awe with suffocating danger.',
+    premise:
+      'The deep gate of the undersea city has lit again, and the warnings of a lost civilization are coming true. Coral records voices, and temple inscriptions change with the current.',
+    worldDetail:
+      'The research team has been missing for three days, leaving only broken sonar and a repeating ancient phrase. Each temple makes the submersible equipment feel more like it is answering a sleeping mind.',
+    conflict:
+      'Beyond the deep gate may lie salvation, or the disaster the ancient civilization sealed away. The clearer the call becomes, the harder it is to know whether it is rescue, temptation, or memory contamination.',
+    playerIdentity: 'A submersible investigator who hears the call from beyond the deep gate.',
+    mainGoal: 'Explore the undersea city and decide whether the deep gate must be sealed again.',
+    initialThread: 'Enter the glowing coral zone and find the first temple inscription.',
+    finaleDirection: 'Resolve the deep gate, the ancient city, and the source of the call.'
+  }
+];
+
+const worldsByLanguage: Record<Language, WorldDefinition[]> = {
+  zh: worldsZh,
+  en: worldsEn
+};
+
+export function getWorlds(language: Language) {
+  return worldsByLanguage[language];
+}
+
+export function getWorldById(id: string, language: Language) {
+  return getWorlds(language).find((world) => world.id === id) ?? getWorlds(language)[0];
+}
+
+export const worlds = worldsZh;

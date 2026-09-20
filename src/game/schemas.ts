@@ -1,26 +1,6 @@
 import { z } from 'zod';
 import { EVENT_TYPES } from './types';
 
-const statImpactSchema = z.enum([
-  'none',
-  'minor_loss',
-  'medium_loss',
-  'major_loss',
-  'minor_gain',
-  'medium_gain',
-  'major_gain'
-]);
-
-const statEffectsSchema = z
-  .object({
-    hp: statImpactSchema,
-    san: statImpactSchema,
-    atk: statImpactSchema,
-    def: statImpactSchema,
-    reason: z.string().min(2).max(160)
-  })
-  .strict();
-
 const choiceSchema = z.object({
   id: z.enum(['A', 'B', 'C']),
   text: z.string().min(2).max(80)
@@ -33,13 +13,14 @@ export const controlOutputSchema = z
       summary: z.string().min(2).max(300),
       event_type: z.enum(EVENT_TYPES)
     }),
-    stat_effects: statEffectsSchema,
     hidden_state_updates: z
       .object({
-        progress: z.number().int().min(-10).max(20).optional(),
+        progress: z.literal(0).optional(),
         key_clues: z.array(z.string().min(1).max(40)).max(5).optional(),
         allies: z.array(z.string().min(1).max(40)).max(5).optional(),
         injuries: z.array(z.string().min(1).max(40)).max(5).optional(),
+        removed_allies: z.array(z.string().min(1).max(40)).max(5).optional(),
+        healed_injuries: z.array(z.string().min(1).max(40)).max(5).optional(),
         flags: z.array(z.string().min(1).max(40)).max(5).optional(),
         major_choices: z.array(z.string().min(1).max(80)).max(5).optional()
       })
@@ -54,13 +35,17 @@ export const controlOutputSchema = z
       })
       .strict()
       .optional(),
-    choices: z.array(choiceSchema).length(3)
+    choices: z.array(choiceSchema).length(3).refine(
+      (choices) => new Set(choices.map((choice) => choice.id)).size === 3,
+      'choices must contain A, B and C exactly once'
+    )
   })
   .strict();
 
 export const finaleOutputSchema = z
   .object({
-    schema_version: z.union([z.literal('failure_finale_v1'), z.literal('completion_finale_v1')]),
+    schema_version: z.literal('finale_v1'),
+    ending_kind: z.enum(['death', 'collapse', 'incomplete', 'bittersweet', 'standard', 'perfect']),
     title: z.string().min(2).max(40),
     finale_story: z.string().min(80).max(2600)
   })

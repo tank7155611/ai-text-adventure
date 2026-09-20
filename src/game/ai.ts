@@ -1,7 +1,6 @@
 import type { z } from 'zod';
 import {
-  buildCompletionFinalePrompt,
-  buildFailureFinalePrompt,
+  buildFinalePrompt,
   buildJsonRepairPrompt,
   buildOpeningControlPrompt,
   buildOpeningStoryPrompt,
@@ -9,7 +8,7 @@ import {
   buildRoundStoryPrompt
 } from './prompts';
 import { controlOutputSchema, finaleOutputSchema } from './schemas';
-import type { FinaleOutput, GameState, ModelControlOutput, ModelRoundOutput, Story, WorldDefinition } from './types';
+import type { Choice, EndingContext, FinaleOutput, GameState, Language, ModelControlOutput, Story, WorldDefinition } from './types';
 import { chatCompletion } from '../services/llmClient';
 import { extractPartialJsonStringField, isJsonStringFieldClosed, parseJsonObject } from '../utils/json';
 
@@ -19,20 +18,35 @@ export type StreamPreview = {
   bodyComplete?: boolean;
 };
 
-const controlJsonOptions = {
-  stream: false,
-  temperature: 0,
-  maxTokens: 1200,
-  responseFormat: 'json_object' as const,
-  retryWithoutResponseFormat: true
-};
+const CONTROL_REQUEST_TIMEOUT_MS = 45_000;
 
-const repairJsonOptions = {
+function controlJsonOptions(timeoutMs = CONTROL_REQUEST_TIMEOUT_MS) {
+  return {
+    stream: false,
+    temperature: 0,
+    maxTokens: 1200,
+    responseFormat: 'json_object' as const,
+    retryWithoutResponseFormat: true,
+    timeoutMs
+  };
+}
+
+function repairJsonOptions(timeoutMs = CONTROL_REQUEST_TIMEOUT_MS) {
+  return {
+    stream: false,
+    temperature: 0,
+    maxTokens: 1600,
+    responseFormat: 'json_object' as const,
+    retryWithoutResponseFormat: true,
+    timeoutMs
+  };
+}
+
+const storyOptions = {
   stream: false,
-  temperature: 0,
-  maxTokens: 1600,
-  responseFormat: 'json_object' as const,
-  retryWithoutResponseFormat: true
+  temperature: 0.8,
+  maxTokens: 4096,
+  timeoutMs: 90_000
 };
 
 function stripFences(text: string) {
@@ -42,14 +56,24 @@ function stripFences(text: string) {
 }
 
 export function parseStoryText(rawText: string): Story {
+  if (!rawText.trim()) throw new Error('AI 返回了空白剧情，请重试。');
   const normalized = stripFences(rawText).replace(/\r\n/g, '\n').trim();
   const lines = normalized.split('\n');
   const firstMeaningfulIndex = lines.findIndex((line) => line.trim());
   const firstLine = firstMeaningfulIndex >= 0 ? lines[firstMeaningfulIndex].trim() : '';
-  const title = (firstLine.replace(/^#+\s*/, '').replace(/^标题[:：]\s*/, '').trim() || '未命名章节').slice(0, 40);
+  const title = (
+    firstLine
+      .replace(/^#+\s*/, '')
+      .replace(/^(标题|Title)[:：]\s*/i, '')
+      .trim() || '未命名章节'
+  ).slice(0, 80);
   const bodyLines = lines.slice(firstMeaningfulIndex + 1);
+  const firstBodyContentIndex = bodyLines.findIndex((line) => line.trim());
   const body = bodyLines
-    .filter((line, index) => !(index === 0 && /^正文[:：]?\s*$/.test(line.trim())))
+    .filter(
+      (line, index) =>
+        !(index === firstBodyContentIndex && /^(正文|Body)[:：]?\s*$/i.test(line.trim()))
+    )
     .join('\n')
     .trim();
 
@@ -92,7 +116,9 @@ async function parseWithRepair<T>(
   rawText: string,
   schema: z.ZodType<T>,
   repairKind: 'control' | 'finale',
-  signal?: AbortSignal
+  language: Language,
+  signal?: AbortSignal,
+  timeoutMs = CONTROL_REQUEST_TIMEOUT_MS
 ) {
   let validationError = '未知错误';
 
@@ -106,10 +132,10 @@ async function parseWithRepair<T>(
   }
 
   const repaired = await chatCompletion(
-    buildJsonRepairPrompt(rawText, repairKind, validationError),
+    buildJsonRepairPrompt(rawText, repairKind, validationError, language),
     signal,
     undefined,
-    repairJsonOptions
+    repairJsonOptions(timeoutMs)
   );
   try {
     const second = schema.safeParse(parseJsonObject(repaired));
@@ -121,11 +147,19 @@ async function parseWithRepair<T>(
   throw new Error('AI 返回 JSON 结构不符合要求，自动修复也失败。');
 }
 
-function combineRoundOutput(story: Story, control: ModelControlOutput): ModelRoundOutput {
+function mergePlannedChoiceText(
+  control: Omit<ModelControlOutput, 'choices'> & { choices: Array<Pick<Choice, 'id' | 'text'>> },
+  plannedChoices: Choice[]
+): ModelControlOutput {
   return {
     ...control,
-    schema_version: 'round_event_v1',
-    story
+    choices: plannedChoices.map((plannedChoice) => {
+      const generated = control.choices.find((choice) => choice.id === plannedChoice.id);
+      return {
+        ...plannedChoice,
+        text: generated?.text?.trim() || plannedChoice.text
+      };
+    })
   };
 }
 
@@ -134,78 +168,92 @@ export async function generateOpeningStoryStream(
   signal?: AbortSignal,
   onPreview?: (preview: StreamPreview) => void
 ): Promise<Story> {
-  const rawText = await chatCompletion(buildOpeningStoryPrompt(world), signal, makeStoryPreviewHandler(onPreview));
+  const rawText = await chatCompletion(buildOpeningStoryPrompt(world), signal, makeStoryPreviewHandler(onPreview), { ...storyOptions, stream: true });
   const story = parseStoryText(rawText);
   onPreview?.({ ...story, bodyComplete: true });
   return story;
+}
+
+export async function generateOpeningStory(world: WorldDefinition, signal?: AbortSignal): Promise<Story> {
+  const rawText = await chatCompletion(buildOpeningStoryPrompt(world), signal, undefined, storyOptions);
+  return parseStoryText(rawText);
 }
 
 export async function generateOpeningControl(
   world: WorldDefinition,
   story: Story,
-  signal?: AbortSignal
-): Promise<ModelControlOutput> {
-  const rawText = await chatCompletion(buildOpeningControlPrompt(world, story), signal, undefined, controlJsonOptions);
-  return parseWithRepair(rawText, controlOutputSchema, 'control', signal);
-}
-
-export async function generateOpeningStream(
-  world: WorldDefinition,
+  plannedChoices: Choice[],
   signal?: AbortSignal,
-  onPreview?: (preview: StreamPreview) => void
-): Promise<ModelRoundOutput> {
-  const story = await generateOpeningStoryStream(world, signal, onPreview);
-  const control = await generateOpeningControl(world, story, signal);
-  return combineRoundOutput(story, control);
+  timeoutMs = CONTROL_REQUEST_TIMEOUT_MS
+): Promise<ModelControlOutput> {
+  const rawText = await chatCompletion(
+    buildOpeningControlPrompt(world, story, plannedChoices),
+    signal,
+    undefined,
+    controlJsonOptions(timeoutMs)
+  );
+  const control = await parseWithRepair(rawText, controlOutputSchema, 'control', world.language, signal, timeoutMs);
+  return mergePlannedChoiceText(control, plannedChoices);
 }
 
 export async function generateRoundStoryStream(
   game: GameState,
-  choiceText: string,
+  selectedChoice: Choice,
   signal?: AbortSignal,
   onPreview?: (preview: StreamPreview) => void
 ): Promise<Story> {
-  const rawText = await chatCompletion(buildRoundStoryPrompt(game, choiceText), signal, makeStoryPreviewHandler(onPreview));
+  const rawText = await chatCompletion(
+    buildRoundStoryPrompt(game, selectedChoice),
+    signal,
+    makeStoryPreviewHandler(onPreview),
+    { ...storyOptions, stream: true }
+  );
   const story = parseStoryText(rawText);
   onPreview?.({ ...story, bodyComplete: true });
   return story;
 }
 
+export async function generateRoundStory(
+  game: GameState,
+  selectedChoice: Choice,
+  signal?: AbortSignal
+): Promise<Story> {
+  const rawText = await chatCompletion(
+    buildRoundStoryPrompt(game, selectedChoice),
+    signal,
+    undefined,
+    storyOptions
+  );
+  return parseStoryText(rawText);
+}
+
 export async function generateRoundControl(
   game: GameState,
-  choiceText: string,
+  selectedChoice: Choice,
   story: Story,
-  signal?: AbortSignal
+  plannedChoices: Choice[],
+  signal?: AbortSignal,
+  timeoutMs = CONTROL_REQUEST_TIMEOUT_MS
 ): Promise<ModelControlOutput> {
-  const rawText = await chatCompletion(buildRoundControlPrompt(game, choiceText, story), signal, undefined, controlJsonOptions);
-  return parseWithRepair(rawText, controlOutputSchema, 'control', signal);
+  const rawText = await chatCompletion(
+    buildRoundControlPrompt(game, selectedChoice, story, plannedChoices),
+    signal,
+    undefined,
+    controlJsonOptions(timeoutMs)
+  );
+  const control = await parseWithRepair(rawText, controlOutputSchema, 'control', game.language, signal, timeoutMs);
+  return mergePlannedChoiceText(control, plannedChoices);
 }
 
-export async function generateRoundStream(
+export async function generateFinaleStream(
   game: GameState,
-  choiceText: string,
-  signal?: AbortSignal,
-  onPreview?: (preview: StreamPreview) => void
-): Promise<ModelRoundOutput> {
-  const story = await generateRoundStoryStream(game, choiceText, signal, onPreview);
-  const control = await generateRoundControl(game, choiceText, story, signal);
-  return combineRoundOutput(story, control);
-}
-
-export async function generateFailureFinaleStream(
-  game: GameState,
+  ending: EndingContext,
   signal?: AbortSignal,
   onPreview?: (preview: StreamPreview) => void
 ): Promise<FinaleOutput> {
-  const rawText = await chatCompletion(buildFailureFinalePrompt(game), signal, makeFinalePreviewHandler(onPreview));
-  return parseWithRepair(rawText, finaleOutputSchema, 'finale', signal);
-}
-
-export async function generateCompletionFinaleStream(
-  game: GameState,
-  signal?: AbortSignal,
-  onPreview?: (preview: StreamPreview) => void
-): Promise<FinaleOutput> {
-  const rawText = await chatCompletion(buildCompletionFinalePrompt(game), signal, makeFinalePreviewHandler(onPreview));
-  return parseWithRepair(rawText, finaleOutputSchema, 'finale', signal);
+  const rawText = await chatCompletion(buildFinalePrompt(game, ending), signal, makeFinalePreviewHandler(onPreview), { ...storyOptions, stream: true });
+  const schema = finaleOutputSchema.refine((finale) => finale.ending_kind === ending.kind, {
+    path: ['ending_kind'], message: `ending_kind must be ${ending.kind}; keep the story consistent with this ending`
+  });
+  return parseWithRepair(rawText, schema, 'finale', game.language, signal);
 }
